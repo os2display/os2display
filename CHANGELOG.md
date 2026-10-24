@@ -6,6 +6,13 @@ All notable changes to this project will be documented in this file.
 
 - Fixed the template contribution guide in the README naming `os2display/display` instead of `os2display/os2display`.
 
+- Added `MsGraphFeedType`, a feed type that shows meetings from Microsoft 365 room mailboxes through
+  Microsoft Graph on calendar slides. Credentials (directory/tenant id, application/client id and
+  client secret) are stored per feed source — no environment variables — and the rooms are picked
+  per feed from a dropdown fetched live from Graph, optionally narrowed by room list. Each feed
+  chooses how many minutes its calendar data may be cached. See
+  `docs/configuration/ms-graph-feed.md`.
+
 ## [3.0.1] - 2026-11-19
 
 - Updated the `symfony/*` packages to the latest 6.4 patch versions to fix the Symfony advisories that
