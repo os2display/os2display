@@ -133,6 +133,9 @@ fails — so a Graph outage does not hammer the API.
 
 ## Troubleshooting
 
+Room discovery uses explicit pages of 100 and `$skip` when Graph omits `@odata.nextLink`.
+An empty room-list selection makes all discovered rooms available, regardless of bookings.
+
 Failures are logged on the `feed` channel.
 
 | Symptom                                              | Likely cause                                                                       |
