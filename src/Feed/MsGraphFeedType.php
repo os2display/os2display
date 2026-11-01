@@ -43,9 +43,7 @@ class MsGraphFeedType implements FeedTypeInterface
     public const int MAX_CACHE_EXPIRE_MINUTES = 1440;
 
     /**
-     * Room mailboxes are commonly configured to strip the meeting subject
-     * (`Set-CalendarProcessing -DeleteSubject $true`), which leaves the event
-     * without a title. Show the room as booked rather than an empty line.
+     * Used when an event is private or its room mailbox stripped the subject.
      */
     public const string DEFAULT_EVENT_TITLE = 'Optaget';
 

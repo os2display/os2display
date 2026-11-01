@@ -190,7 +190,7 @@ class ApiClient
                     [
                         'startDateTime' => $from->setTimezone(new \DateTimeZone('UTC'))->format(self::GRAPH_DATE_FORMAT),
                         'endDateTime' => $to->setTimezone(new \DateTimeZone('UTC'))->format(self::GRAPH_DATE_FORMAT),
-                        '$select' => 'id,subject,start,end,isCancelled',
+                        '$select' => 'id,subject,sensitivity,start,end,isCancelled',
                         '$orderby' => 'start/dateTime',
                         '$top' => self::PAGE_SIZE,
                     ],
@@ -215,6 +215,10 @@ class ApiClient
 
                     $subject = $entry['subject'] ?? null;
                     $title = is_string($subject) ? trim($subject) : '';
+
+                    if ('private' === strtolower((string) ($entry['sensitivity'] ?? '')) || false !== stripos($title, 'Privat')) {
+                        $title = $defaultEventTitle;
+                    }
 
                     $events[] = new CalendarEvent(
                         Ulid::generate(),

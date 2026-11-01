@@ -261,6 +261,63 @@ class MsGraphFeedTypeTest extends TestCase
         $this->createFeedType($client)->getConfigOptions(new Request(), $this->createFeedSource(), 'locations');
     }
 
+    public function testPrivateSensitivityAndPrivateSubjectReplaceTheEventTitle(): void
+    {
+        $calendarQuery = [];
+        $events = [
+            [
+                'subject' => 'Planning',
+                'sensitivity' => 'private',
+                'start' => ['dateTime' => '2026-10-25T10:00:00', 'timeZone' => 'UTC'],
+                'end' => ['dateTime' => '2026-10-25T11:00:00', 'timeZone' => 'UTC'],
+            ],
+            [
+                'subject' => 'Privat aftale',
+                'sensitivity' => 'normal',
+                'start' => ['dateTime' => '2026-10-25T11:00:00', 'timeZone' => 'UTC'],
+                'end' => ['dateTime' => '2026-10-25T12:00:00', 'timeZone' => 'UTC'],
+            ],
+            [
+                'subject' => 'privat appointment',
+                'sensitivity' => 'normal',
+                'start' => ['dateTime' => '2026-10-25T12:00:00', 'timeZone' => 'UTC'],
+                'end' => ['dateTime' => '2026-10-25T13:00:00', 'timeZone' => 'UTC'],
+            ],
+            [
+                'subject' => 'Planning',
+                'sensitivity' => 'normal',
+                'start' => ['dateTime' => '2026-10-25T13:00:00', 'timeZone' => 'UTC'],
+                'end' => ['dateTime' => '2026-10-25T14:00:00', 'timeZone' => 'UTC'],
+            ],
+        ];
+        $http = new MockHttpClient(static function (string $method, string $url) use (&$calendarQuery, $events): MockResponse {
+            if ('POST' === $method) {
+                return new MockResponse('{"access_token":"test-token","expires_in":3600}');
+            }
+
+            parse_str((string) parse_url($url, PHP_URL_QUERY), $calendarQuery);
+
+            return new MockResponse(json_encode(['value' => $events], JSON_THROW_ON_ERROR));
+        });
+
+        $result = (new ApiClient($http, new ArrayAdapter()))->getEvents(
+            $this->createFeedSource(),
+            self::ROOM_1,
+            new \DateTimeImmutable('2026-10-25T00:00:00Z'),
+            new \DateTimeImmutable('2026-11-01T00:00:00Z'),
+            300,
+            MsGraphFeedType::DEFAULT_EVENT_TITLE,
+        );
+
+        $this->assertSame([
+            MsGraphFeedType::DEFAULT_EVENT_TITLE,
+            MsGraphFeedType::DEFAULT_EVENT_TITLE,
+            MsGraphFeedType::DEFAULT_EVENT_TITLE,
+            'Planning',
+        ], array_column($result, 'title'));
+        $this->assertStringContainsString('sensitivity', $calendarQuery['$select']);
+    }
+
     public function testRoomDiscoveryContinuesWithoutNextLink(): void
     {
         $rooms = array_map(static fn (int $number): array => [
