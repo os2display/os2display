@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 - Fixed the template contribution guide in the README naming `os2display/display` instead of `os2display/os2display`.
+- Fixed the README naming PHP 8.3+ instead of 8.4+ for running scripts on the host.
 
 ## [3.0.0] - 2026-10-30
 
