@@ -106,6 +106,17 @@
             "symfony/flex": true,
             "symfony/runtime": true
         },
+        "audit": {
+            "ignore": {
+                "CVE-2026-49858": "Applies only to the JSON:API and HAL item normalizers. The API enables only the jsonld and html formats, and GraphQL is disabled.",
+                "CVE-2026-54164": "Applies when API Platform denormalizes relation IRIs into resource objects. The input DTOs declare relations as strings, and the custom write operations set 'deserialize: false'."
+            },
+            "ignore-abandoned": {
+                "composer/package-versions-deprecated": "No code uses this package. Remove it in a later minor release.",
+                "debril/feed-io": "Replace it with php-feed-io/feed-io in a later minor release. The replacement uses the same FeedIo namespace.",
+                "doctrine/cache": "doctrine/orm 2.x requires this package. Only doctrine/orm 3 removes it, which is a major upgrade."
+            }
+        },
         "optimize-autoloader": true,
         "preferred-install": {
             "*": "dist"
