@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.7.5] - 2026-11-19
+
+- [#654](https://github.com/os2display/os2display/pull/654)
+  - Updated the `symfony/*` packages to the latest 6.4 patch versions to fix the Symfony advisories that
+    `composer audit` reported. Ignored the `api-platform/core` advisories and the two abandoned packages in
+    `composer.json`, with reasons.
+  - Rebuilt the images on PHP 8.3.37 for the PHP security release of 2026-11-19.
 - [#635](https://github.com/os2display/display-api-service/pull/635)
   - Hard-coded the release archive name to `display-api-service-<tag>.tar.gz` instead of deriving it from the
     repository name, so 2.x release assets keep their name after the repository is renamed.
