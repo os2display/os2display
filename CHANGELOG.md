@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-11-19
+
+- Updated the `symfony/*` packages to the latest 6.4 patch versions to fix the Symfony advisories that
+  `composer audit` reported (#652). Ignored the two `api-platform/core` advisories in `composer.json`,
+  because they do not apply to this API. Ignored the three abandoned packages until a later minor release.
+- Rebuilt the images on PHP 8.4.28 for the PHP security release of 2026-11-19 (#652).
+
 ## [3.0.0] - 2026-10-30
 
 ### Summary of 3.0
