@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.6.5] - 2026-11-19
+
 - [#653](https://github.com/os2display/os2display/pull/653)
   - Updated the `symfony/*` packages to the latest 6.4 patch versions to fix the Symfony advisories that
     `composer audit` reported. Ignored the `api-platform/core` and `firebase/php-jwt` advisories and the two
