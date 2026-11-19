@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.8.5] - 2026-11-19
+
+- [#655](https://github.com/os2display/os2display/pull/655)
+  - Updated the `symfony/*` packages to the latest 6.4 patch versions to fix the Symfony advisories that
+    `composer audit` reported. Ignored the `api-platform/core` advisories and the two abandoned packages in
+    `composer.json`, with reasons.
+  - Rebuilt the images on PHP 8.3.37 for the PHP security release of 2026-11-19.
 - [#639](https://github.com/os2display/display-api-service/pull/639)
   - Passed `--latest=false` to `gh release create`, so releasing this line no longer takes the GitHub
     "Latest" release badge off 3.x.
