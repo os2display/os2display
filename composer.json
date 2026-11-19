@@ -92,6 +92,17 @@
             "symfony/flex": true,
             "symfony/runtime": true
         },
+        "audit": {
+            "ignore": {
+                "CVE-2025-45769": "Applies to too-short HMAC keys. itk-dev/openid-connect verifies ID tokens only with the RS256 keys of the provider. The fix (firebase/php-jwt 7) needs a major upgrade of itk-dev/openid-connect-bundle.",
+                "CVE-2026-49858": "Applies only to the JSON:API and HAL item normalizers. The API enables only the jsonld and html formats, and GraphQL is disabled.",
+                "CVE-2026-54164": "Applies when API Platform denormalizes relation IRIs into resource objects. The input DTOs declare relations as strings, and the custom write operations set 'deserialize: false'."
+            },
+            "ignore-abandoned": {
+                "debril/feed-io": "No fix is available on the 2.x line. 3.x replaces it with php-feed-io/feed-io.",
+                "doctrine/cache": "doctrine/orm 2.x requires this package. Only doctrine/orm 3 removes it, which is a major upgrade."
+            }
+        },
         "optimize-autoloader": true,
         "preferred-install": {
             "*": "dist"
