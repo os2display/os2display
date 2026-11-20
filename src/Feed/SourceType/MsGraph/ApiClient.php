@@ -25,6 +25,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  *                         to the relevant mailboxes with an Exchange
  *                         application access policy (`New-ApplicationAccessPolicy`),
  *                         otherwise the app can read *every* mailbox in the tenant.
+ * - `Calendars.ReadWrite` — optional, replaces calendar read access for bookable rooms.
+ *                         Prefer scoped Exchange Application RBAC grants for mailbox access.
  *
  * All reads are cached in the dedicated `ms.graph.cache` pool: tokens until
  * shortly before they expire, places for an hour (they rarely change), and
@@ -170,12 +172,13 @@ class ApiClient
         $secrets = new SecretsDTO($feedSource);
 
         $cacheKey = sprintf(
-            '%s%s-%s-%s-%s',
+            '%s%s-%s-%s-%s-%s',
             self::CACHE_KEY_EVENTS_PREFIX,
             $secrets->getCredentialsHash(),
             $this->hash($roomEmail),
             $from->setTimezone(new \DateTimeZone('UTC'))->format('YmdHi'),
             $to->setTimezone(new \DateTimeZone('UTC'))->format('YmdHi'),
+            $this->getRoomVersion($feedSource, $roomEmail),
         );
 
         /** @var list<CalendarEvent> $events */
@@ -235,6 +238,126 @@ class ApiClient
         );
 
         return $events;
+    }
+
+    /**
+     * Read live availability, never the display feed's cached events.
+     *
+     * @return list<array{startTime: \DateTimeImmutable, endTime: \DateTimeImmutable}>
+     */
+    public function getBusyIntervals(FeedSource $feedSource, string $roomEmail, \DateTimeImmutable $from, \DateTimeImmutable $to): array
+    {
+        $from = $from->setTimezone(new \DateTimeZone('UTC'));
+        $to = $to->setTimezone(new \DateTimeZone('UTC'));
+        $data = $this->post($feedSource, '/users/'.rawurlencode($roomEmail).'/calendar/getSchedule', [
+            'schedules' => [$roomEmail],
+            'startTime' => ['dateTime' => $from->format(self::GRAPH_DATE_FORMAT), 'timeZone' => 'UTC'],
+            'endTime' => ['dateTime' => $to->format(self::GRAPH_DATE_FORMAT), 'timeZone' => 'UTC'],
+            'availabilityViewInterval' => 15,
+        ]);
+
+        if (!is_array($data['value'] ?? null)) {
+            throw new MsGraphException('MS Graph did not return valid room availability.');
+        }
+
+        foreach ($data['value'] as $schedule) {
+            if (!is_array($schedule) || !is_string($schedule['scheduleId'] ?? null) || 0 !== strcasecmp($schedule['scheduleId'], $roomEmail)) {
+                continue;
+            }
+
+            if (isset($schedule['error']) || !isset($schedule['scheduleItems']) || !is_array($schedule['scheduleItems'])) {
+                throw new MsGraphException('MS Graph did not return valid room availability.');
+            }
+
+            $intervals = [];
+            foreach ($schedule['scheduleItems'] as $entry) {
+                if (!is_array($entry)) {
+                    throw new MsGraphException('MS Graph returned an invalid availability interval.');
+                }
+
+                if ('free' === ($entry['status'] ?? null) || 'workingElsewhere' === ($entry['status'] ?? null)) {
+                    continue;
+                }
+
+                $start = $this->parseGraphDateTime($entry['start'] ?? null);
+                $end = $this->parseGraphDateTime($entry['end'] ?? null);
+                if (null === $start || null === $end || $end <= $start) {
+                    throw new MsGraphException('MS Graph returned an invalid availability interval.');
+                }
+
+                $intervals[] = ['startTime' => $start, 'endTime' => $end];
+            }
+
+            return $intervals;
+        }
+
+        throw new MsGraphException('MS Graph did not return availability for the requested room.');
+    }
+
+    public function createRoomEvent(FeedSource $feedSource, string $roomEmail, \DateTimeImmutable $from, \DateTimeImmutable $to, string $transactionId): void
+    {
+        $from = $from->setTimezone(new \DateTimeZone('UTC'));
+        $to = $to->setTimezone(new \DateTimeZone('UTC'));
+        $data = $this->post($feedSource, '/users/'.rawurlencode($roomEmail).'/events', [
+            'subject' => 'Straksbooking',
+            'start' => ['dateTime' => $from->format(self::GRAPH_DATE_FORMAT), 'timeZone' => 'UTC'],
+            'end' => ['dateTime' => $to->format(self::GRAPH_DATE_FORMAT), 'timeZone' => 'UTC'],
+            'showAs' => 'busy',
+            'allowNewTimeProposals' => false,
+            'transactionId' => $transactionId,
+        ], 201);
+
+        if (!is_string($data['id'] ?? null) || '' === $data['id']) {
+            throw new MsGraphException('MS Graph did not confirm the created event.');
+        }
+    }
+
+    public function invalidateRoomEvents(FeedSource $feedSource, string $roomEmail): void
+    {
+        $key = $this->getRoomVersionKey($feedSource, $roomEmail);
+        $this->msGraphCache->delete($key);
+        $this->getRoomVersion($feedSource, $roomEmail);
+    }
+
+    private function getRoomVersion(FeedSource $feedSource, string $roomEmail): string
+    {
+        return $this->msGraphCache->get($this->getRoomVersionKey($feedSource, $roomEmail), static function (ItemInterface $item): string {
+            $item->expiresAfter(86400);
+
+            return Ulid::generate();
+        });
+    }
+
+    private function getRoomVersionKey(FeedSource $feedSource, string $roomEmail): string
+    {
+        return 'msgraph-room-version-'.new SecretsDTO($feedSource)->getCredentialsHash().'-'.$this->hash($roomEmail);
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
+    private function post(FeedSource $feedSource, string $path, array $body, int $expectedStatus = 200): array
+    {
+        try {
+            $response = $this->client->request('POST', self::GRAPH_ENDPOINT.$path, [
+                'headers' => ['Authorization' => 'Bearer '.$this->getToken($feedSource)],
+                'json' => $body,
+                'timeout' => 15,
+                'max_duration' => 20,
+            ]);
+            $status = $response->getStatusCode();
+            if ($expectedStatus !== $status) {
+                throw new MsGraphException(sprintf('MS Graph booking request failed (HTTP %d).', $status), $status);
+            }
+
+            return $response->toArray();
+        } catch (MsGraphException $exception) {
+            throw $exception;
+        } catch (\Throwable $exception) {
+            throw new MsGraphException('MS Graph booking request could not be completed.', 0, $exception);
+        }
     }
 
     /**
