@@ -138,7 +138,7 @@ Local development relies on:
   `display.local.itkdev.dk` (configurable via `COMPOSE_DOMAIN` in `.env`); itk-dev's
   setup is documented at [itk-dev/devops_itkdev-docker](https://github.com/itk-dev/devops_itkdev-docker).
 
-PHP 8.3+ and Node are only required if you build or run scripts directly on the host;
+PHP 8.4+ and Node are only required if you build or run scripts directly on the host;
 otherwise the containers provide them.
 
 ## Development setup
