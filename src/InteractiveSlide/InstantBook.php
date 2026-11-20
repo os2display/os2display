@@ -14,6 +14,7 @@ use App\Exceptions\ForbiddenException;
 use App\Exceptions\NotAcceptableException;
 use App\Exceptions\TooManyRequestsException;
 use App\Feed\FeedOutputModels;
+use App\Feed\MsGraphFeedType;
 use App\Service\FeedService;
 use App\Service\InteractiveSlideService;
 use App\Service\KeyVaultService;
@@ -64,6 +65,7 @@ class InstantBook implements InteractiveSlideInterface
         private readonly FeedService $feedService,
         private readonly string $busyIntervalsSource,
         private readonly LoggerInterface $interactiveLogger,
+        private readonly MsGraphBooking $msGraphBooking,
     ) {
         if (!in_array($busyIntervalsSource, [self::SOURCE_GRAPH, self::SOURCE_FEED], true)) {
             throw new \InvalidArgumentException(sprintf('Invalid INSTANT_BOOK_BUSY_INTERVALS_SOURCE "%s"; expected "%s" or "%s".', $busyIntervalsSource, self::SOURCE_GRAPH, self::SOURCE_FEED));
@@ -108,6 +110,10 @@ class InstantBook implements InteractiveSlideInterface
      */
     public function performAction(Tenant $tenant, Slide $slide, InteractionSlideRequest $interactionRequest): array
     {
+        if (MsGraphFeedType::class === $slide->getFeed()?->getFeedSource()?->getFeedType()) {
+            return $this->msGraphBooking->performAction($tenant, $slide, $interactionRequest);
+        }
+
         return match ($interactionRequest->action) {
             self::ACTION_GET_QUICK_BOOK_OPTIONS => $this->getQuickBookOptions($tenant, $slide, $interactionRequest),
             self::ACTION_QUICK_BOOK => $this->quickBook($tenant, $slide, $interactionRequest),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import dayjs from "dayjs";
 import localeDa from "dayjs/locale/da";
 import localizedFormat from "dayjs/plugin/localizedFormat";
@@ -30,6 +30,8 @@ import {
   getInstantBookingFromLocalStorage,
   setInstantBookingFromLocalStorage,
   renderFutureEvents,
+  getBookingRequestId,
+  clearBookingRequestId,
 } from "./calendar-single-booking-helper.jsx";
 
 /**
@@ -72,6 +74,7 @@ function CalendarSingleBooking({
   const [processingBooking, setProcessingBooking] = useState(false);
   const [secondsUntilNextEvent, setSecondsUntilNextEvent] = useState(null);
   const [bookingError, setBookingError] = useState(null);
+  const bookingInFlight = useRef(false);
 
   const fetchBookingIntervals = () => {
     if (!instantBookingEnabled) {
@@ -107,7 +110,12 @@ function CalendarSingleBooking({
           },
         }),
       })
-        .then((r) => r.json())
+        .then((r) => {
+          if (!r.ok) {
+            throw new Error(`Booking options failed with status ${r.status}`);
+          }
+          return r.json();
+        })
         .then((data) => {
           setBookableIntervals(
             data.options.map((option) => {
@@ -119,6 +127,11 @@ function CalendarSingleBooking({
               };
             }),
           );
+        })
+        .catch(() => {
+          setBookableIntervals([]);
+          setBookingError("generic");
+          setTimeout(() => setBookingError(null), 10000);
         })
         .finally(() => {
           setFetchingIntervals(false);
@@ -176,11 +189,14 @@ function CalendarSingleBooking({
       return;
     }
 
-    if (!instantBookingEnabled) {
+    if (!instantBookingEnabled || bookingInFlight.current) {
       return;
     }
 
+    const transactionId = getBookingRequestId(slide["@id"], interval);
+    bookingInFlight.current = true;
     setProcessingBooking(true);
+    setBookingError(null);
 
     fetch(`${slide["@id"]}/action`, {
       method: "POST",
@@ -194,6 +210,7 @@ function CalendarSingleBooking({
         action: "ACTION_QUICK_BOOK",
         data: {
           interval,
+          transactionId,
         },
       }),
     })
@@ -206,14 +223,19 @@ function CalendarSingleBooking({
         return r.json();
       })
       .then((data) => {
+        clearBookingRequestId(slide["@id"]);
         setBookingResult(data);
         setInstantBookingFromLocalStorage(slide["@id"], data);
       })
       .catch((err) => {
+        if ([400, 406, 409].includes(err?.status)) {
+          clearBookingRequestId(slide["@id"]);
+        }
         setBookingError(err?.status === 409 ? "conflict" : "generic");
         setTimeout(() => setBookingError(null), 10000);
       })
       .finally(() => {
+        bookingInFlight.current = false;
         setProcessingBooking(false);
       });
   };

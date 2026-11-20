@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added Straksbooking for MS Graph calendar feeds using the feed source's app credentials, scoped
+  calendar write access, live availability checks and room-specific cache invalidation. Existing
+  Calendar API booking setups retain their existing authentication and behavior.
+
 - Added `MsGraphFeedType`, a feed type that shows meetings from Microsoft 365 room mailboxes through
   Microsoft Graph on calendar slides. Credentials (directory/tenant id, application/client id and
   client secret) are stored per feed source — no environment variables — and the rooms are picked

@@ -4,14 +4,22 @@ declare(strict_types=1);
 
 namespace App\Tests\Interactive;
 
+use App\Entity\Tenant;
 use App\Entity\Tenant\Feed;
 use App\Entity\Tenant\FeedSource;
+use App\Entity\Tenant\Slide;
 use App\Exceptions\ConflictException;
 use App\Feed\CalendarApiFeedType;
 use App\Feed\FeedOutputModels;
 use App\Feed\FeedTypeInterface;
+use App\Feed\MsGraphFeedType;
+use App\Feed\OutputModel\Calendar\Resource;
 use App\Feed\RssFeedType;
+use App\Feed\SourceType\MsGraph\ApiClient;
 use App\InteractiveSlide\InstantBook;
+use App\InteractiveSlide\InteractionSlideRequest;
+use App\InteractiveSlide\MsGraphBooking;
+use App\Repository\FeedSourceRepository;
 use App\Service\FeedService;
 use App\Service\InteractiveSlideService;
 use App\Service\KeyVaultService;
@@ -19,9 +27,11 @@ use Doctrine\ORM\EntityManager;
 use Hautelook\AliceBundle\PhpUnit\BaseDatabaseTrait;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Exception\UnprocessableEntityHttpException;
+use Symfony\Component\Uid\Ulid;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 use Symfony\Contracts\HttpClient\ResponseInterface;
@@ -64,6 +74,39 @@ class InstantBookTest extends KernelTestCase
 
         $intervalFree = $service->intervalFree($schedules, new \DateTime('+15 minutes'), new \DateTime('+45 minutes'));
         $this->assertFalse($intervalFree);
+    }
+
+    public function testMsGraphBookingUsesDatabaseLockWithoutLeavingATransactionOpen(): void
+    {
+        $tenant = $this->entityManager->getRepository(Tenant::class)->findOneBy([]);
+        $this->assertInstanceOf(Tenant::class, $tenant);
+        $source = (new FeedSource())->setFeedType(MsGraphFeedType::class)->setSecrets([
+            'tenant_id' => 'example.onmicrosoft.com',
+            'client_id' => '11111111-2222-3333-4444-555555555555',
+            'client_secret' => 'test-secret',
+        ]);
+        $source->setId(new Ulid());
+        $source->setTenant($tenant);
+        $feed = (new Feed())->setFeedSource($source)->setConfiguration(['resources' => ['room@example.com']]);
+        $feed->setTenant($tenant);
+        $slide = (new Slide())->setFeed($feed)->setContent(['layout' => 'singleBooking', 'instantBookingEnabled' => true]);
+        $slide->setId(new Ulid());
+        $slide->setTenant($tenant);
+        $api = $this->createMock(ApiClient::class);
+        $api->method('getRooms')->willReturn(['room@example.com' => new Resource('room@example.com', 'room@example.com', '', 'Room')]);
+        $api->method('getBusyIntervals')->willReturn([]);
+        $api->expects($this->once())->method('createRoomEvent');
+        $sources = $this->createMock(FeedSourceRepository::class);
+        $sources->method('findBy')->willReturn([]);
+        $booking = new MsGraphBooking($api, $this->entityManager, $sources, new ArrayAdapter(), new ArrayAdapter(), new NullLogger());
+        $before = $this->entityManager->getConnection()->getTransactionNestingLevel();
+        $result = $booking->performAction($tenant, $slide, new InteractionSlideRequest(InstantBook::class, 'ACTION_QUICK_BOOK', [
+            'interval' => ['resource' => 'room@example.com', 'durationMinutes' => 15],
+            'transactionId' => Ulid::generate(),
+        ]));
+
+        $this->assertSame(201, $result['status']);
+        $this->assertSame($before, $this->entityManager->getConnection()->getTransactionNestingLevel());
     }
 
     public function testGetBusyIntervalsFromFeedFiltersByResourceAndWindow(): void
@@ -221,6 +264,7 @@ class InstantBookTest extends KernelTestCase
             $feedService,
             InstantBook::SOURCE_FEED,
             new NullLogger(),
+            $this->createMock(MsGraphBooking::class),
         );
     }
 
@@ -240,6 +284,7 @@ class InstantBookTest extends KernelTestCase
             $this->createMock(FeedService::class),
             InstantBook::SOURCE_GRAPH,
             new NullLogger(),
+            $this->createMock(MsGraphBooking::class),
         );
     }
 
