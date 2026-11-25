@@ -17,6 +17,9 @@ use App\Feed\SourceType\MsGraph\MsGraphException;
 use App\Service\FeedService;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\HttpClient\MockHttpClient;
+use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\HttpFoundation\Request;
 
 class MsGraphFeedTypeTest extends TestCase
