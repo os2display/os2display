@@ -75,14 +75,12 @@ function MultiselectFromEndpoint({
             }),
           );
         })
-        .catch((error) => {
-          const message =
-            error?.data?.["hydra:description"] || error?.data?.message || "";
+        .catch((error) =>
           toast.error(
-            `${t("multiselect-from-endpoint.error-fetching")} ${dayjs().format("HH:mm:ss")}. ${message ? t(message, { defaultValue: message }) : ""}`.trim(),
+            `${t("multiselect-from-endpoint.error-fetching")} ${dayjs().format("HH:mm:ss")}. ${error?.data?.["hydra:description"] || error?.data?.message || ""}`.trim(),
             { autoClose: false },
-          );
-        });
+          ),
+        );
     }
   }, [optionsEndpoint]);
 
