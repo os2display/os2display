@@ -1,6 +1,5 @@
 import styled from "styled-components";
 import dayjs from "dayjs";
-import { ulid } from "ulid";
 import IconCalendarPlus from "./icon-calendar-plus.svg";
 import { renderTimeOfDayFromUnixTimestamp } from "./helper.js";
 
@@ -178,33 +177,6 @@ const renderFutureEvents = (eventsToRender, getTitle) => {
 };
 
 const instantBookingKey = "instantBookings";
-const pendingBookingKey = (slideId) => `pendingInstantBooking:${slideId}`;
-
-const getBookingRequestId = (slideId, interval) => {
-  const key = pendingBookingKey(slideId);
-  const stored = localStorage.getItem(key);
-  const request = stored === null ? null : JSON.parse(stored);
-  if (
-    request?.resource === interval.resource &&
-    request?.durationMinutes === interval.durationMinutes
-  ) {
-    return request.transactionId;
-  }
-  const transactionId = ulid();
-  localStorage.setItem(
-    key,
-    JSON.stringify({
-      resource: interval.resource,
-      durationMinutes: interval.durationMinutes,
-      transactionId,
-    }),
-  );
-  return transactionId;
-};
-
-const clearBookingRequestId = (slideId) => {
-  localStorage.removeItem(pendingBookingKey(slideId));
-};
 
 const getInstantBookingFromLocalStorage = (slideId) => {
   const localstorageEntry = localStorage.getItem(instantBookingKey);
@@ -234,8 +206,6 @@ const setInstantBookingFromLocalStorage = (slideId, value) => {
 };
 
 export {
-  getBookingRequestId,
-  clearBookingRequestId,
   Wrapper,
   Header,
   RoomInfo,
