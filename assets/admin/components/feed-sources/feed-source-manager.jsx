@@ -89,17 +89,6 @@ function FeedSourceManager({
       },
     },
     {
-      value: "App\\Feed\\MsGraphFeedType",
-      title: t("ms-graph-feed-type.title"),
-      key: "MsGraphFeedType",
-      secretsDefault: {
-        tenant_id: "",
-        client_id: "",
-        client_secret: "",
-        locations: [],
-      },
-    },
-    {
       value: "App\\Feed\\NotifiedFeedType",
       title: t("dynamic-fields.notified-feed-type.title"),
       key: "NotifiedFeedType",
