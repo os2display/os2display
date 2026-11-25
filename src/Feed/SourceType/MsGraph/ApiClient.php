@@ -111,7 +111,7 @@ class ApiClient
 
         $path = null === $roomListEmail
             ? '/places/microsoft.graph.room'
-            : '/places/'.rawurlencode($roomListEmail).'/microsoft.graph.roomlist/rooms';
+            : '/places/'.rawurlencode($roomListEmail).'/microsoft.graph.rooms';
 
         $cacheKey = self::CACHE_KEY_ROOMS_PREFIX.$secrets->getCredentialsHash().'-'.(null === $roomListEmail ? 'all' : $this->hash($roomListEmail));
 
