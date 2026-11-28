@@ -1207,14 +1207,6 @@
   "ms-graph-feed-type": {
     "title": "MS Graph kalender",
     "tenant-id": "Directory (tenant) ID",
-    "errors": {
-      "authentication": "Microsoft Entra ID afviste anmodningen om et adgangstoken (HTTP 400/401). Bed systemadministratoren kontrollere Tenant ID, Client ID og Client Secret, herunder om hemmeligheden er udløbet. Brug hemmelighedens værdi, ikke dens ID. Den præcise OAuth-fejlkode findes i serverloggen.",
-      "bad-request": "Microsoft Graph afviste forespørgslen om gruppemedlemmer eller lokaler som ugyldig (HTTP 400). Kontrollér gruppens objekt-ID og serverloggen.",
-      "invalid-token": "Microsoft Graph afviste adgangstokenet (HTTP 401). Bed systemadministratoren kontrollere application-rettigheder til gruppemedlemmer, User.ReadBasic.All til medlemmers mail og navn, Place.Read.All til lokaler samt Calendars.Read til kalenderdata. Kontrollér administratorsamtykke og forny det cachede token.",
-      "access-denied": "Microsoft Graph nægtede adgang til gruppemedlemmer eller lokaler (HTTP 403). Bed systemadministratoren kontrollere application-rettigheder til gruppemedlemmer, User.ReadBasic.All og Place.Read.All samt administratorsamtykke. Forny det cachede token efter ændring af rettigheder.",
-      "throttled": "Microsoft Graph modtager for mange forespørgsler (HTTP 429). Vent lidt, og prøv igen. Hvis problemet fortsætter, bed systemadministratoren undersøge belastningen og serverloggen.",
-      "connection": "Forbindelsen til Microsoft kunne ikke gennemføres. Bed systemadministratoren kontrollere de gemte indstillinger, netværksforbindelsen og serverloggen. Oplys tidspunktet for fejlen."
-    },
     "client-id": "Application (client) ID",
     "client-id-help": "Kaldes også App ID. Det er den samme værdi.",
     "client-secret": "Client Secret",

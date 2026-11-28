@@ -261,17 +261,17 @@ class ApiClient
                     // Don't throw on non-2xx: the error body carries the reason.
                     $content = $response->getContent(false);
                 } catch (\Throwable $throwable) {
-                    throw new TokenException('MS Graph token request failed: '.$throwable->getMessage(), (int) $throwable->getCode(), $throwable);
+                    throw new MsGraphException('MS Graph token request failed: '.$throwable->getMessage(), (int) $throwable->getCode(), $throwable);
                 }
 
                 try {
                     $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
                 } catch (\JsonException $exception) {
-                    throw new TokenException(sprintf('MS Graph token response was not valid JSON (HTTP %d).', $statusCode), $statusCode, $exception);
+                    throw new MsGraphException(sprintf('MS Graph token response was not valid JSON (HTTP %d).', $statusCode), $statusCode, $exception);
                 }
 
                 if (!is_array($data)) {
-                    throw new TokenException(sprintf('MS Graph token response was not an object (HTTP %d).', $statusCode), $statusCode);
+                    throw new MsGraphException(sprintf('MS Graph token response was not an object (HTTP %d).', $statusCode), $statusCode);
                 }
 
                 $token = $data['access_token'] ?? null;
@@ -281,7 +281,7 @@ class ApiClient
                     // description can echo request parameters.
                     $error = $data['error'] ?? null;
 
-                    throw new TokenException(sprintf('MS Graph token request was rejected (HTTP %d): %s', $statusCode, is_string($error) ? $error : 'unknown_error'), $statusCode);
+                    throw new MsGraphException(sprintf('MS Graph token request was rejected (HTTP %d): %s', $statusCode, is_string($error) ? $error : 'unknown_error'), $statusCode);
                 }
 
                 $expiresIn = (int) ($data['expires_in'] ?? 0);
