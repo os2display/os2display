@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Command\Tenant;
 
 use App\Entity\Tenant;
-use App\InteractiveSlide\InstantBook;
 use App\Repository\TenantRepository;
 use App\Service\InteractiveSlideService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -82,15 +81,6 @@ class ConfigureTenantCommand extends Command
                     $io->info('Configuring '.$interactiveClass);
 
                     $configuration = [];
-
-                    if (InstantBook::class === $interactiveClass
-                        && $io->confirm('Enable MS Graph feed-source booking without configuring Calendar API credentials?', false)) {
-                        if (null === $this->interactiveService->getInteractiveSlideConfig($tenant, $interactiveClass)) {
-                            $this->interactiveService->saveConfiguration($tenant, $interactiveClass, $configuration);
-                        }
-                        $io->info('MS Graph uses feed-source credentials. Any existing Calendar API booking configuration has been preserved.');
-                        continue;
-                    }
 
                     foreach ($configurable as $key => $data) {
                         $value = $io->ask($key.' ('.$data['description'].')');

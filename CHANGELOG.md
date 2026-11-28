@@ -5,16 +5,12 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 - MS Graph feed sources now require an M365 group object ID instead of room-list selection.
-  Slide room choices and booking authorization use the group's direct room members.
-
-- Added Straksbooking for MS Graph calendar feeds using the feed source's app credentials, scoped
-  calendar write access, live availability checks and room-specific cache invalidation. Existing
-  Calendar API booking setups retain their existing authentication and behavior.
+  Slide room choices use the group's direct room members.
 
 - Added `MsGraphFeedType`, a feed type that shows meetings from Microsoft 365 room mailboxes through
   Microsoft Graph on calendar slides. Credentials (directory/tenant id, application/client id and
   client secret) are stored per feed source — no environment variables — and the rooms are picked
-  per feed from a dropdown fetched live from Graph, optionally narrowed by room list. Each feed
+  per feed from a dropdown fetched live from Graph, restricted by group membership. Each feed
   chooses how many minutes its calendar data may be cached. See
   `docs/configuration/ms-graph-feed.md`.
 
