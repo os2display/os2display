@@ -1,27 +1,11 @@
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert } from "react-bootstrap";
-import MultiselectFromEndpoint from "../../slide/content/multiselect-from-endpoint";
 import FormInput from "../../util/forms/form-input";
 
-const MsGraphFeedType = ({
-  feedSourceId,
-  handleInput,
-  formStateObject,
-  mode,
-}) => {
+const MsGraphFeedType = ({ handleInput, formStateObject, mode }) => {
   const { t } = useTranslation("common", {
     keyPrefix: "ms-graph-feed-type",
   });
-
-  const [optionsEndpoint, setOptionsEndpoint] = useState(null);
-
-  useEffect(() => {
-    if (feedSourceId && feedSourceId !== "") {
-      const endpoint = `${feedSourceId}/config/locations`;
-      setOptionsEndpoint(endpoint);
-    }
-  }, [feedSourceId]);
 
   return (
     <>
@@ -66,23 +50,16 @@ const MsGraphFeedType = ({
         {t("values-info")}
       </Alert>
 
-      {!feedSourceId && (
-        <Alert className="mt-4" variant="warning">
-          {t("save-before-locations-can-be-set")}
-        </Alert>
-      )}
-
-      {optionsEndpoint && (
-        <MultiselectFromEndpoint
-          onChange={handleInput}
-          name="locations"
-          disableSearch={false}
-          label={t("locations")}
-          helpText={t("locations-help")}
-          value={formStateObject.locations ?? []}
-          optionsEndpoint={optionsEndpoint}
-        />
-      )}
+      <FormInput
+        name="group_id"
+        type="text"
+        label={t("group-id")}
+        helpText={t("group-id-help")}
+        formGroupClasses="mb-2"
+        onChange={handleInput}
+        value={formStateObject?.group_id ?? ""}
+        required
+      />
     </>
   );
 };

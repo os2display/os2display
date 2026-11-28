@@ -96,7 +96,7 @@ function FeedSourceManager({
         tenant_id: "",
         client_id: "",
         client_secret: "",
-        locations: [],
+        group_id: "",
       },
     },
     {

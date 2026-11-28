@@ -103,6 +103,7 @@
             "ergebnis/composer-normalize": true,
             "php-http/discovery": true,
             "phpstan/extension-installer": true,
+            "symfony/ai-mate-composer-plugin": true,
             "symfony/flex": true,
             "symfony/runtime": true
         },

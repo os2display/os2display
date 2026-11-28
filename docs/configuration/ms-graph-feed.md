@@ -25,7 +25,9 @@ From the app registration you need three values:
 
 | Permission       | Needed for                                                                                    |
 | ---------------- | --------------------------------------------------------------------------------------------- |
-| `Place.Read.All` | Listing room lists (locations) and rooms, i.e. the dropdowns in the admin and the room names. |
+| `GroupMember.Read.All` | Reading the configured group's direct members. |
+| `User.ReadBasic.All` | Reading user members' `mail` and `displayName` rather than limited member IDs. |
+| `Place.Read.All` | Reading the room directory to verify that group members are actual rooms. |
 | `Calendars.Read` | Reading the meetings of the room mailboxes.                                                   |
 
 Pick **Application permissions**, not Delegated — there is no user in this flow. Then click
@@ -53,18 +55,28 @@ Set-CalendarProcessing -Identity room1@example.com -DeleteSubject $false -AddOrg
 
 Consider whether that is acceptable privacy-wise before putting it on a public screen.
 
-### Room lists
+### Room selection through an M365 group
 
-The "locations" dropdown lists **room lists** (`Get-DistributionGroup -RoomList` in Exchange). If the
-organisation has not organised its rooms into room lists, leave the selection empty — the feed then
-offers all rooms in the tenant.
+Enter the group's **object ID**, not its name or email address, in the feed source's
+**M365 Group object ID** text field, for example `5391f5f7-111d-4452-a1b8-393b85399721`.
+The ID is required and must be a GUID.
+
+The app requests `GET /groups/{group_id}/members?$select=id,displayName,mail` and follows
+`@odata.nextLink` through all pages. Only direct members are considered; nested groups are not expanded.
+Members are matched by email address, case-insensitively, against `/places/microsoft.graph.room`.
+Only actual room mailboxes belonging to the group are offered in the slide's room dropdown.
+Ordinary users and other directory objects are excluded. An empty group produces an empty dropdown,
+not a fallback to all rooms. Missing member email properties cause a configuration error; check
+member-property read permissions. Hidden group membership additionally requires `Member.Read.Hidden`.
+
+Group membership controls selection, not calendar permissions. Exchange access restrictions must
+still allow reading or booking the selected room mailboxes.
 
 ## Setting up the feed source
 
 1. Admin → "Datakilder" → create a feed source of type **MS Graph kalender**.
-2. Fill in Directory (tenant) ID, Application (client) ID and Client Secret, and save.
-3. Re-open the feed source — the **Lokationer** dropdown is now populated from Graph. Pick the room
-   lists the editors may use, or leave it empty for all rooms.
+2. Fill in Directory (tenant) ID, Application (client) ID, Client Secret and **M365 Group object ID**, and save.
+3. On the slide, select rooms from the configured group's room members.
 
 Secrets stored on the feed source:
 
@@ -73,11 +85,11 @@ Secrets stored on the feed source:
   "tenant_id": "11111111-2222-3333-4444-555555555555",
   "client_id": "66666666-7777-8888-9999-000000000000",
   "client_secret": "the secret value",
-  "locations": ["building-a@example.com"]
+  "group_id": "5391f5f7-111d-4452-a1b8-393b85399721"
 }
 ```
 
-Only `locations` is readable through the API; the three credentials are write-only.
+Only `group_id` is readable through the API; the three credentials are write-only.
 
 ## Per-feed configuration
 
@@ -85,7 +97,7 @@ When an editor creates a calendar slide on this feed source they get:
 
 | Key                    | Input                       | Meaning                                                                               |
 | ---------------------- | --------------------------- | ------------------------------------------------------------------------------------- |
-| `resources`            | `multiselect-from-endpoint` | The rooms to show. Populated from the rooms of the selected room lists. **Required.** |
+| `resources`            | `multiselect-from-endpoint` | The rooms to show. Only actual rooms that are direct members of the configured group. **Required.** |
 | `cache_expire_minutes` | number                      | How long Graph data may be reused. 1–1440 minutes, default 5.                         |
 
 ## Data window
@@ -110,8 +122,10 @@ Output (calendar output model):
 ]
 ```
 
-`startTime`/`endTime` are Unix timestamps; `resourceTitle` is the room's display name (falling back to
-its email address if `Place.Read.All` is missing).
+`startTime`/`endTime` are Unix timestamps; `resourceTitle` is the room's display name, or its email
+address when Graph returns no display name. Group or room-directory lookup failures fail the feed
+rather than bypassing group validation. Saved selections outside the configured group must be
+reselected.
 
 ## Caching
 
@@ -121,11 +135,13 @@ everything is cached in the dedicated `ms.graph.cache` pool:
 | Cached                 | TTL                                                    |
 | ---------------------- | ------------------------------------------------------ |
 | Access token           | `expires_in` minus 5 minutes (≈55 minutes)             |
-| Room lists and rooms   | 1 hour                                                 |
+| Group room membership and room directory | 1 hour |
 | Calendar view per room | `cache_expire_minutes` of the feed (default 5 minutes) |
 
 Cache keys include a fingerprint of the credentials, so rotating the client secret immediately
 invalidates the cached token and data.
+Group-room cache keys also contain the group ID, so changing it immediately uses a different
+membership cache entry. Membership changes within the same group can take up to one hour to appear.
 
 On top of this, `FeedService` caches the assembled feed response per feed (default 5 minutes, or the
 feed's `cache_expire` in seconds if set) and caches an empty result for 30 seconds when the feed
@@ -141,7 +157,7 @@ sources continue working without calendar write permission.
 
 The application needs **Calendars.ReadWrite** access to the bookable room mailboxes. This includes
 calendar reading; a separate `Calendars.Read` grant is not needed for those same mailboxes.
-`Place.Read.All` remains necessary for room discovery and validation.
+Group-member permissions, `User.ReadBasic.All` and `Place.Read.All` remain necessary for discovery and validation.
 
 Prefer [Exchange Online RBAC for Applications](https://learn.microsoft.com/exchange/permissions-exo/application-rbac)
 to assign **Application Calendars.ReadWrite** with a resource scope containing only the permitted
@@ -149,7 +165,7 @@ room mailboxes. Unscoped Entra calendar permissions are additive: remove overlap
 grants when relying on RBAC for mailbox restrictions. Alternatively, existing deployments can
 restrict Entra application grants with an Application Access Policy.
 
-Room lists only filter the rooms offered by OS2display; they do not restrict the Graph app's actual
+The configured group only filters the rooms offered by OS2display; it does not restrict the Graph app's actual
 mailbox permissions.
 
 After adding an Entra application permission, the cached access token can retain its previous
@@ -172,7 +188,7 @@ This also clears cached Graph data for all sources; it does not change stored cr
    **Aktivér straksbooking**.
 5. Test on an authenticated screen client. Booking is deliberately unavailable in the admin preview.
 
-The server validates the tenant, slide settings, selected room and source room-list restrictions
+The server validates the tenant, slide settings, selected room and source group membership
 before offering durations or writing events. Availability is read live using
 `POST /users/{roomEmail}/calendar/getSchedule`, independently of the display feed cache and
 `INSTANT_BOOK_BUSY_INTERVALS_SOURCE`. Unknown or errored availability prevents booking.
@@ -207,10 +223,10 @@ durations remain unchanged.
 
 ## Troubleshooting
 
-Room discovery uses explicit pages of 100 and `$skip` when Graph omits `@odata.nextLink`.
-An empty room-list selection makes all discovered rooms available, regardless of bookings.
+The room directory uses explicit pages of 100 and `$skip` when Graph omits `@odata.nextLink`.
+Group-member discovery follows `@odata.nextLink`; it does not use room-directory offset pagination.
 
-Failures are logged on the `feed` channel. If room lists or rooms cannot be loaded in the admin,
+Failures are logged on the `feed` channel. If group members or rooms cannot be loaded in the admin,
 the standard persistent error toast shows a safe connection error and suggested checks.
 Raw Microsoft responses and credentials are not exposed. These lookup failures return HTTP 502;
 successful lookups still return the usual array of options, including an empty array when no

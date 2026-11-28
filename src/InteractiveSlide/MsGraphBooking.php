@@ -14,7 +14,6 @@ use App\Exceptions\TooManyRequestsException;
 use App\Feed\MsGraphFeedType;
 use App\Feed\SourceType\MsGraph\ApiClient;
 use App\Feed\SourceType\MsGraph\MsGraphException;
-use App\Feed\SourceType\MsGraph\SecretsDTO;
 use App\Repository\FeedSourceRepository;
 use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
@@ -193,11 +192,7 @@ class MsGraphBooking
             throw new NotAcceptableException('Instant booking is not enabled for this slide and room.');
         }
 
-        $locations = new SecretsDTO($source)->locations;
-        $rooms = [];
-        foreach ([] === $locations ? [null] : $locations as $location) {
-            $rooms += $this->apiClient->getRooms($source, $location);
-        }
+        $rooms = $this->apiClient->getRooms($source);
         if (!isset($rooms[$resource])) {
             throw new NotAcceptableException('The room is not available through this feed source.');
         }

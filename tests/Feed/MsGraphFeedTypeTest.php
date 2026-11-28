@@ -11,10 +11,10 @@ use App\Feed\FeedConfigurationException;
 use App\Feed\FeedOutputModels;
 use App\Feed\MsGraphFeedType;
 use App\Feed\OutputModel\Calendar\CalendarEvent;
-use App\Feed\OutputModel\Calendar\Location;
 use App\Feed\OutputModel\Calendar\Resource;
 use App\Feed\SourceType\MsGraph\ApiClient;
 use App\Feed\SourceType\MsGraph\MsGraphException;
+use App\Feed\SourceType\MsGraph\SecretsDTO;
 use App\Feed\SourceType\MsGraph\TokenException;
 use App\Service\FeedService;
 use PHPUnit\Framework\TestCase;
@@ -56,15 +56,110 @@ class MsGraphFeedTypeTest extends TestCase
         $this->assertMatchesRegularExpression('/^[0-9A-Za-z]{26}$/', $data[0]['id']);
     }
 
-    public function testGetDataFallsBackToEmailWhenRoomNamesCannotBeResolved(): void
+    public function testGetDataRethrowsRoomEligibilityLookupFailure(): void
     {
         $apiClient = $this->createMock(ApiClient::class);
         $apiClient->method('getRooms')->willThrowException(new MsGraphException('Place.Read.All not granted'));
-        $apiClient->method('getEvents')->willReturn([new CalendarEvent('event-1', 'Møde A', 200, 300, self::ROOM_1, self::ROOM_1)]);
+        $apiClient->expects($this->never())->method('getEvents');
 
-        $data = $this->createFeedType($apiClient)->getData($this->createFeed(['resources' => [self::ROOM_1]]));
+        $this->expectException(MsGraphException::class);
+        $this->createFeedType($apiClient)->getData($this->createFeed(['resources' => [self::ROOM_1]]));
+    }
 
-        $this->assertSame(self::ROOM_1, $data[0]['resourceTitle']);
+    public function testPreviouslySelectedRoomOutsideGroupIsRejectedBeforeReadingEvents(): void
+    {
+        $apiClient = $this->createMock(ApiClient::class);
+        $apiClient->method('getRooms')->willReturn([]);
+        $apiClient->expects($this->never())->method('getEvents');
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Selected room is not a member of the configured group');
+        $this->createFeedType($apiClient)->getData($this->createFeed(['resources' => [self::ROOM_1]]));
+    }
+
+    /**
+     * @dataProvider provideInvalidGroupIds
+     */
+    public function testInvalidGroupIdIsRejected(?string $groupId): void
+    {
+        $source = $this->createFeedSource();
+        $secrets = $source->getSecrets();
+        if (null === $groupId) {
+            unset($secrets['group_id']);
+        } else {
+            $secrets['group_id'] = $groupId;
+        }
+        $source->setSecrets($secrets);
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Invalid group_id');
+        new SecretsDTO($source);
+    }
+
+    /**
+     * @return iterable<array{?string}>
+     */
+    public function provideInvalidGroupIds(): iterable
+    {
+        yield [null];
+        yield [''];
+        yield ['group@example.com'];
+        yield ['5391f5f7-111d-4452-a1b8-393b8539972'];
+    }
+
+    public function testGroupMembershipIsPagedFilteredAndCachedByGroup(): void
+    {
+        $groupRequests = [];
+        $directoryRequests = 0;
+        $firstGroup = '5391f5f7-111d-4452-a1b8-393b85399721';
+        $secondGroup = '5391f5f7-111d-4452-a1b8-393b85399722';
+        $next = ApiClient::GRAPH_ENDPOINT.'/groups/'.$firstGroup.'/members?$skiptoken=next';
+        $http = new MockHttpClient(static function (string $method, string $url) use (&$groupRequests, &$directoryRequests, $firstGroup, $next): MockResponse {
+            if ('POST' === $method) {
+                return new MockResponse('{"access_token":"test-token","expires_in":3600}');
+            }
+            if (str_contains($url, '/places/')) {
+                ++$directoryRequests;
+
+                return new MockResponse('{"value":[{"emailAddress":"room1@example.com","displayName":"Room 1"},{"emailAddress":"room2@example.com","displayName":"Room 2"},{"emailAddress":"outside@example.com"}]}');
+            }
+            $groupRequests[] = $url;
+            if ($url === $next) {
+                return new MockResponse('{"value":[{"@odata.type":"#microsoft.graph.user","mail":"room2@example.com"}]}');
+            }
+            if (str_contains($url, $firstGroup)) {
+                parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+                self::assertSame('id,displayName,mail', $query['$select']);
+
+                return new MockResponse(json_encode([
+                    'value' => [
+                        ['@odata.type' => '#microsoft.graph.user', 'mail' => 'ROOM1@example.com'],
+                        ['@odata.type' => '#microsoft.graph.user', 'mail' => 'person@example.com'],
+                        ['@odata.type' => '#microsoft.graph.group', 'mail' => 'outside@example.com'],
+                    ],
+                    '@odata.nextLink' => $next,
+                ], JSON_THROW_ON_ERROR));
+            }
+
+            return new MockResponse('{"value":[]}');
+        });
+        $client = new ApiClient($http, new ArrayAdapter());
+        $source = $this->createFeedSource();
+        $this->assertSame([self::ROOM_1, self::ROOM_2], array_keys($client->getRooms($source)));
+        $this->assertCount(2, $client->getRooms($source));
+        $source->setSecrets(array_merge($source->getSecrets(), ['group_id' => $secondGroup]));
+        $this->assertSame([], $client->getRooms($source));
+        $this->assertCount(3, $groupRequests);
+        $this->assertSame(1, $directoryRequests);
+    }
+
+    public function testGroupMembersWithoutVisibleMailFailExplicitly(): void
+    {
+        $http = new MockHttpClient(static fn (string $method, string $url): MockResponse => new MockResponse(
+            'POST' === $method ? '{"access_token":"test-token","expires_in":3600}' :
+                (str_contains($url, '/groups/') ? '{"value":[{"@odata.type":"#microsoft.graph.user","id":"member","mail":null}]}' : '{"value":[]}'),
+        ));
+        $this->expectException(MsGraphException::class);
+        $this->expectExceptionMessage('member mail is unavailable');
+        new ApiClient($http, new ArrayAdapter())->getRooms($this->createFeedSource());
     }
 
     public function testGetDataRequestsSevenDaysFromMidnightToday(): void
@@ -186,19 +281,6 @@ class MsGraphFeedTypeTest extends TestCase
         $this->assertSame([self::ROOM_1, self::ROOM_2], array_column($options ?? [], 'value'));
     }
 
-    public function testGetConfigOptionsReturnsRoomListsForLocations(): void
-    {
-        $apiClient = $this->createMock(ApiClient::class);
-        $apiClient->method('getRoomLists')->willReturn([
-            'building-b@example.com' => new Location('building-b@example.com', 'Bygning B'),
-            'building-a@example.com' => new Location('building-a@example.com', 'Bygning A'),
-        ]);
-
-        $options = $this->createFeedType($apiClient)->getConfigOptions(new Request(), $this->createFeedSource(), 'locations');
-
-        $this->assertSame(['Bygning A', 'Bygning B'], array_column($options ?? [], 'title'));
-    }
-
     public function testGetConfigOptionsReturnsNullForUnknownName(): void
     {
         $this->assertNull($this->createFeedType($this->createMock(ApiClient::class))->getConfigOptions(new Request(), $this->createFeedSource(), 'unknown'));
@@ -245,7 +327,7 @@ class MsGraphFeedTypeTest extends TestCase
         $this->expectException(FeedConfigurationException::class);
         $this->expectExceptionMessage('ms-graph-feed-type.errors.authentication');
 
-        $this->createFeedType($client)->getConfigOptions(new Request(), $this->createFeedSource(), 'locations');
+        $this->createFeedType($client)->getConfigOptions(new Request(), $this->createFeedSource(), 'resources');
     }
 
     public function testGraphBadRequestIsNotReportedAsInvalidCredentials(): void
@@ -258,7 +340,7 @@ class MsGraphFeedTypeTest extends TestCase
         $this->expectException(FeedConfigurationException::class);
         $this->expectExceptionMessage('ms-graph-feed-type.errors.bad-request');
 
-        $this->createFeedType($client)->getConfigOptions(new Request(), $this->createFeedSource(), 'locations');
+        $this->createFeedType($client)->getConfigOptions(new Request(), $this->createFeedSource(), 'resources');
     }
 
     public function testPrivateSensitivityAndPrivateSubjectReplaceTheEventTitle(): void
@@ -330,6 +412,11 @@ class MsGraphFeedTypeTest extends TestCase
             if ('POST' === $method) {
                 return new MockResponse('{"access_token":"test-token","expires_in":3600}');
             }
+            if (str_contains($url, '/groups/')) {
+                return new MockResponse(json_encode(['value' => array_map(static fn (array $room): array => [
+                    '@odata.type' => '#microsoft.graph.user', 'mail' => $room['emailAddress'],
+                ], array_merge($rooms, [['emailAddress' => 'last@example.com']]))], JSON_THROW_ON_ERROR));
+            }
 
             parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
             self::assertSame('100', $query['$top']);
@@ -344,7 +431,7 @@ class MsGraphFeedTypeTest extends TestCase
 
         $this->assertCount(101, $result);
         $this->assertArrayHasKey('last@example.com', $result);
-        parse_str((string) parse_url($requests[2], PHP_URL_QUERY), $lastQuery);
+        parse_str((string) parse_url($requests[3], PHP_URL_QUERY), $lastQuery);
         $this->assertSame('100', $lastQuery['$skip']);
     }
 
@@ -357,6 +444,9 @@ class MsGraphFeedTypeTest extends TestCase
             if ('POST' === $method) {
                 return new MockResponse('{"access_token":"test-token","expires_in":3600}');
             }
+            if (str_contains($url, '/groups/')) {
+                return new MockResponse('{"value":[{"@odata.type":"#microsoft.graph.user","mail":"first@example.com"},{"@odata.type":"#microsoft.graph.user","mail":"second@example.com"}]}');
+            }
 
             return new MockResponse(json_encode([
                 'value' => [['emailAddress' => $url === $next ? 'second@example.com' : 'first@example.com']],
@@ -367,32 +457,15 @@ class MsGraphFeedTypeTest extends TestCase
         $rooms = (new ApiClient($http, new ArrayAdapter()))->getRooms($this->createFeedSource());
 
         $this->assertCount(2, $rooms);
-        $this->assertSame($next, $requests[2]);
-    }
-
-    public function testRoomListMembersUseDocumentedEndpoint(): void
-    {
-        $http = new MockHttpClient(static function (string $method, string $url): MockResponse {
-            if ('POST' === $method) {
-                return new MockResponse('{"access_token":"test-token","expires_in":3600}');
-            }
-
-            self::assertSame('/v1.0/places/building%40example.com/microsoft.graph.roomlist/rooms', parse_url($url, PHP_URL_PATH));
-
-            return new MockResponse('{"value":[{"emailAddress":"room@example.com","displayName":"Room"}]}');
-        });
-
-        $rooms = (new ApiClient($http, new ArrayAdapter()))->getRooms($this->createFeedSource(), 'building@example.com');
-
-        $this->assertSame('building@example.com', $rooms['room@example.com']->locationId);
+        $this->assertSame($next, $requests[3]);
     }
 
     public function testRoomDiscoveryFailsRatherThanReturningTruncatedResults(): void
     {
-        $http = new MockHttpClient(static fn (string $method): MockResponse => new MockResponse(
-            'POST' === $method ? '{"access_token":"test-token","expires_in":3600}' : json_encode([
+        $http = new MockHttpClient(static fn (string $method, string $url): MockResponse => new MockResponse(
+            'POST' === $method ? '{"access_token":"test-token","expires_in":3600}' : (str_contains($url, '/groups/') ? '{"value":[]}' : json_encode([
                 'value' => array_fill(0, 100, ['emailAddress' => 'room@example.com']),
-            ], JSON_THROW_ON_ERROR),
+            ], JSON_THROW_ON_ERROR)),
         ));
 
         $this->expectException(MsGraphException::class);
@@ -401,13 +474,13 @@ class MsGraphFeedTypeTest extends TestCase
         (new ApiClient($http, new ArrayAdapter()))->getRooms($this->createFeedSource());
     }
 
-    public function testRoomListFailureDoesNotExposeProviderResponse(): void
+    public function testRoomDiscoveryFailureDoesNotExposeProviderResponse(): void
     {
         $apiClient = $this->createMock(ApiClient::class);
-        $apiClient->method('getRoomLists')->willThrowException(new MsGraphException('Sensitive provider response', 401));
+        $apiClient->method('getRooms')->willThrowException(new MsGraphException('Sensitive provider response', 401));
 
         try {
-            $this->createFeedType($apiClient)->getConfigOptions(new Request(), $this->createFeedSource(), 'locations');
+            $this->createFeedType($apiClient)->getConfigOptions(new Request(), $this->createFeedSource(), 'resources');
             $this->fail('Expected a safe configuration error.');
         } catch (FeedConfigurationException $exception) {
             $this->assertSame('ms-graph-feed-type.errors.invalid-token', $exception->getMessage());
@@ -419,11 +492,11 @@ class MsGraphFeedTypeTest extends TestCase
     {
         $secrets = $this->createFeedType($this->createMock(ApiClient::class))->getRequiredSecrets();
 
-        $this->assertSame(['tenant_id', 'client_id', 'client_secret', 'locations'], array_keys($secrets));
+        $this->assertSame(['tenant_id', 'client_id', 'client_secret', 'group_id'], array_keys($secrets));
         $this->assertArrayNotHasKey('exposeValue', $secrets['client_secret']);
         $this->assertArrayNotHasKey('exposeValue', $secrets['tenant_id']);
         $this->assertArrayNotHasKey('exposeValue', $secrets['client_id']);
-        $this->assertTrue($secrets['locations']['exposeValue']);
+        $this->assertTrue($secrets['group_id']['exposeValue']);
     }
 
     /**
@@ -478,13 +551,14 @@ class MsGraphFeedTypeTest extends TestCase
 
     private function createFeedSource(): FeedSource
     {
-        $feedSource = $this->createMock(FeedSource::class);
-        $feedSource->method('getSecrets')->willReturn([
+        $feedSource = new FeedSource();
+        $feedSource->setSecrets([
             'tenant_id' => 'contoso.onmicrosoft.com',
             'client_id' => '11111111-2222-3333-4444-555555555555',
             'client_secret' => 'secret',
+            'group_id' => '5391f5f7-111d-4452-a1b8-393b85399721',
         ]);
-        $feedSource->method('getTenant')->willReturn($this->createTenant());
+        $feedSource->setTenant($this->createTenant());
 
         return $feedSource;
     }

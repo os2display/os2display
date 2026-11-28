@@ -7,7 +7,6 @@ namespace App\Feed;
 use App\Entity\Tenant\Feed;
 use App\Entity\Tenant\FeedSource;
 use App\Feed\OutputModel\Calendar\CalendarEvent;
-use App\Feed\OutputModel\Calendar\Location;
 use App\Feed\OutputModel\Calendar\Resource;
 use App\Feed\SourceType\MsGraph\ApiClient;
 use App\Feed\SourceType\MsGraph\SecretsDTO;
@@ -21,8 +20,8 @@ use Symfony\Component\Uid\Ulid;
  * Supplies 'calendar' data from Microsoft Graph room (resource) mailboxes.
  *
  * Mirrors the structure of {@see CalendarApiFeedType}:
- * - The feed source holds the Entra ID app credentials and, optionally, a set
- *   of *locations* (Graph room lists) that narrow the room selection.
+ * - The feed source holds the Entra ID app credentials and a group object ID
+ *   that restricts room selection to the group's direct room members.
  * - Each feed selects the *resources* (rooms) it shows, from a dropdown that is
  *   populated live from Graph.
  * - `getData()` returns the events of those rooms for a seven day window.
@@ -68,6 +67,7 @@ class MsGraphFeedType implements FeedTypeInterface
             if (null === $feedSource) {
                 throw new \RuntimeException('MsGraphFeedType: Feed source not set.');
             }
+            new SecretsDTO($feedSource);
 
             $requestedResources = $configuration['resources'] ?? null;
 
@@ -79,14 +79,15 @@ class MsGraphFeedType implements FeedTypeInterface
             [$from, $to] = $this->getTimeWindow();
 
             $resourceTitles = $this->getResourceTitles($feedSource);
+            foreach ($requestedResources as $requestedResource) {
+                if (!is_string($requestedResource) || !array_key_exists(strtolower($requestedResource), $resourceTitles)) {
+                    throw new \RuntimeException('MsGraphFeedType: Selected room is not a member of the configured group.');
+                }
+            }
 
             $events = [];
 
             foreach ($requestedResources as $requestedResource) {
-                if (!is_string($requestedResource) || '' === $requestedResource) {
-                    continue;
-                }
-
                 $events = array_merge($events, $this->apiClient->getEvents(
                     $feedSource,
                     $requestedResource,
@@ -102,7 +103,7 @@ class MsGraphFeedType implements FeedTypeInterface
                 'title' => $event->title,
                 'startTime' => $event->startTimeTimestamp,
                 'endTime' => $event->endTimeTimestamp,
-                'resourceTitle' => $resourceTitles[$event->resourceId] ?? $event->resourceDisplayName,
+                'resourceTitle' => $resourceTitles[strtolower($event->resourceId)] ?? $event->resourceDisplayName,
                 'resourceId' => $event->resourceId,
             ], $events);
 
@@ -165,24 +166,12 @@ class MsGraphFeedType implements FeedTypeInterface
     public function getConfigOptions(Request $request, FeedSource $feedSource, string $name): ?array
     {
         try {
-            if ('locations' === $name) {
-                $locationOptions = array_map(static fn (Location $location): array => [
-                    'id' => Ulid::generate(),
-                    'title' => $location->displayName,
-                    'value' => $location->id,
-                ], array_values($this->apiClient->getRoomLists($feedSource)));
-
-                usort($locationOptions, static fn (array $a, array $b): int => strcmp((string) $a['title'], (string) $b['title']));
-
-                return $locationOptions;
-            }
-
             if ('resources' === $name) {
                 $resourceOptions = array_map(static fn (Resource $resource): array => [
                     'id' => Ulid::generate(),
                     'title' => $resource->displayName.' ('.$resource->id.')',
                     'value' => $resource->id,
-                ], array_values($this->getRooms($feedSource)));
+                ], array_values($this->apiClient->getRooms($feedSource)));
 
                 usort($resourceOptions, static fn (array $a, array $b): int => strcmp((string) $a['title'], (string) $b['title']));
 
@@ -221,8 +210,8 @@ class MsGraphFeedType implements FeedTypeInterface
             'tenant_id' => ['type' => 'string'],
             'client_id' => ['type' => 'string'],
             'client_secret' => ['type' => 'string'],
-            'locations' => [
-                'type' => 'string_array',
+            'group_id' => [
+                'type' => 'string',
                 'exposeValue' => true,
             ],
         ];
@@ -253,12 +242,12 @@ class MsGraphFeedType implements FeedTypeInterface
                 'tenant_id' => ['type' => 'string', 'minLength' => 1],
                 'client_id' => ['type' => 'string', 'minLength' => 1],
                 'client_secret' => ['type' => 'string', 'minLength' => 1],
-                'locations' => [
-                    'type' => 'array',
-                    'items' => ['type' => 'string'],
+                'group_id' => [
+                    'type' => 'string',
+                    'pattern' => '^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$',
                 ],
             ],
-            'required' => ['tenant_id', 'client_id', 'client_secret'],
+            'required' => ['tenant_id', 'client_id', 'client_secret', 'group_id'],
         ];
     }
 
@@ -297,55 +286,17 @@ class MsGraphFeedType implements FeedTypeInterface
     }
 
     /**
-     * Rooms available to the feed source: those of the selected room lists, or
-     * every room in the tenant when no room list is selected.
-     *
-     * @return array<string, OutputModel\Calendar\Resource> keyed by room email address
-     */
-    private function getRooms(FeedSource $feedSource): array
-    {
-        $secrets = new SecretsDTO($feedSource);
-
-        if ([] === $secrets->locations) {
-            return $this->apiClient->getRooms($feedSource);
-        }
-
-        $rooms = [];
-
-        foreach ($secrets->locations as $location) {
-            $rooms = array_merge($rooms, $this->apiClient->getRooms($feedSource, $location));
-        }
-
-        return $rooms;
-    }
-
-    /**
      * Friendly room names keyed by room email address.
-     *
-     * Resolving names needs `Place.Read.All`, which the events themselves do
-     * not. A missing/denied place lookup must therefore not take the feed down
-     * — fall back to the email address as the title.
      *
      * @return array<string, string>
      */
     private function getResourceTitles(FeedSource $feedSource): array
     {
-        try {
-            $titles = [];
-
-            foreach ($this->getRooms($feedSource) as $email => $resource) {
-                $titles[$email] = $resource->displayName;
-            }
-
-            return $titles;
-        } catch (\Throwable $throwable) {
-            $this->feedLogger->warning('MsGraphFeedType: Could not resolve room names for feed source {feedSourceId}, falling back to email addresses: {message}', [
-                'feedSourceId' => $feedSource->getId(),
-                'message' => $throwable->getMessage(),
-                'exception' => $throwable,
-            ]);
-
-            return [];
+        $titles = [];
+        foreach ($this->apiClient->getRooms($feedSource) as $email => $resource) {
+            $titles[strtolower($email)] = $resource->displayName;
         }
+
+        return $titles;
     }
 }

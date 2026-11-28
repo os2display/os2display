@@ -21,12 +21,7 @@ readonly class SecretsDTO
     public string $clientId;
     public string $clientSecret;
 
-    /**
-     * Selected room lists (locations) to pick rooms from. Empty means "all rooms".
-     *
-     * @var list<string>
-     */
-    public array $locations;
+    public string $groupId;
 
     public function __construct(FeedSource $feedSource)
     {
@@ -63,10 +58,11 @@ readonly class SecretsDTO
         $this->clientId = $clientId;
         $this->clientSecret = $clientSecret;
 
-        $locations = $secrets['locations'] ?? [];
-        $this->locations = is_array($locations)
-            ? array_values(array_filter($locations, static fn (mixed $location): bool => is_string($location) && '' !== $location))
-            : [];
+        $groupId = $secrets['group_id'] ?? null;
+        if (!is_string($groupId) || 1 !== preg_match('/^[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}$/', trim($groupId))) {
+            throw new \RuntimeException('Invalid group_id. Expected a group object ID (GUID).');
+        }
+        $this->groupId = strtolower(trim($groupId));
     }
 
     /**

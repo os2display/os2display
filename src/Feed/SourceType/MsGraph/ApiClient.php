@@ -6,7 +6,6 @@ namespace App\Feed\SourceType\MsGraph;
 
 use App\Entity\Tenant\FeedSource;
 use App\Feed\OutputModel\Calendar\CalendarEvent;
-use App\Feed\OutputModel\Calendar\Location;
 use App\Feed\OutputModel\Calendar\Resource;
 use Symfony\Component\Uid\Ulid;
 use Symfony\Contracts\Cache\CacheInterface;
@@ -20,7 +19,8 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * app registration acts as itself — there is no signed-in user, so the
  * required Graph permissions are *application* permissions with admin consent:
  *
- * - `Place.Read.All`    — list room lists and rooms.
+ * - `GroupMember.Read.All` and `User.ReadBasic.All` — list group members and their mail.
+ * - `Place.Read.All`    — verify members against the room directory.
  * - `Calendars.Read`    — read the room mailbox calendars. Should be narrowed
  *                         to the relevant mailboxes with an Exchange
  *                         application access policy (`New-ApplicationAccessPolicy`),
@@ -44,8 +44,8 @@ class ApiClient
     private const string GRANT_TYPE = 'client_credentials';
 
     private const string CACHE_KEY_TOKEN_PREFIX = 'msgraph-token-';
-    private const string CACHE_KEY_ROOM_LISTS_PREFIX = 'msgraph-roomlists-v2-';
-    private const string CACHE_KEY_ROOMS_PREFIX = 'msgraph-rooms-v2-';
+    private const string CACHE_KEY_GROUP_ROOMS_PREFIX = 'msgraph-group-rooms-';
+    private const string CACHE_KEY_ROOMS_PREFIX = 'msgraph-rooms-v3-';
     private const string CACHE_KEY_EVENTS_PREFIX = 'msgraph-events-';
 
     /** Tokens are valid for ~1 hour; renew a little early to avoid races. */
@@ -63,64 +63,62 @@ class ApiClient
     ) {}
 
     /**
-     * List the room lists ("locations") of the tenant.
-     *
-     * @return array<string, Location> keyed by room list email address
-     *
-     * @throws MsGraphException
-     */
-    public function getRoomLists(FeedSource $feedSource): array
-    {
-        $secrets = new SecretsDTO($feedSource);
-
-        /** @var array<string, Location> $roomLists */
-        $roomLists = $this->msGraphCache->get(
-            self::CACHE_KEY_ROOM_LISTS_PREFIX.$secrets->getCredentialsHash(),
-            function (ItemInterface $item) use ($feedSource): array {
-                $item->expiresAfter(self::PLACES_CACHE_TTL_SECONDS);
-
-                $locations = [];
-
-                foreach ($this->requestAllPages($feedSource, '/places/microsoft.graph.roomlist', offsetPagination: true) as $entry) {
-                    $email = $this->getPlaceEmail($entry);
-
-                    if (null === $email) {
-                        continue;
-                    }
-
-                    $displayName = $entry['displayName'] ?? null;
-
-                    $locations[$email] = new Location($email, is_string($displayName) && '' !== $displayName ? $displayName : $email);
-                }
-
-                return $locations;
-            },
-        );
-
-        return $roomLists;
-    }
-
-    /**
-     * List rooms, either all of them or only the ones in a given room list.
+     * Actual rooms that are direct members of the configured group.
      *
      * @return array<string, \App\Feed\OutputModel\Calendar\Resource> keyed by room email address
      *
      * @throws MsGraphException
      */
-    public function getRooms(FeedSource $feedSource, ?string $roomListEmail = null): array
+    public function getRooms(FeedSource $feedSource): array
     {
         $secrets = new SecretsDTO($feedSource);
 
-        $path = null === $roomListEmail
-            ? '/places/microsoft.graph.room'
-            : '/places/'.rawurlencode($roomListEmail).'/microsoft.graph.roomlist/rooms';
+        return $this->msGraphCache->get(
+            self::CACHE_KEY_GROUP_ROOMS_PREFIX.$secrets->getCredentialsHash().'-'.$secrets->groupId,
+            function (ItemInterface $item) use ($feedSource, $secrets): array {
+                $item->expiresAfter(self::PLACES_CACHE_TTL_SECONDS);
 
-        $cacheKey = self::CACHE_KEY_ROOMS_PREFIX.$secrets->getCredentialsHash().'-'.(null === $roomListEmail ? 'all' : $this->hash($roomListEmail));
+                $members = $this->requestAllPages($feedSource, '/groups/'.$secrets->groupId.'/members', ['$select' => 'id,displayName,mail']);
+                $rooms = $this->getDirectoryRooms($feedSource);
+                $result = [];
+                foreach ($members as $entry) {
+                    if ('#microsoft.graph.user' !== ($entry['@odata.type'] ?? null)) {
+                        continue;
+                    }
+                    $email = $entry['mail'] ?? null;
+                    if (!is_string($email) || '' === $email) {
+                        throw new MsGraphException('MS Graph group member mail is unavailable. Check member-property read permissions.');
+                    }
+                    $room = $rooms[strtolower($email)] ?? null;
+                    if (null !== $room) {
+                        $result[$room->id] = $room;
+                    }
+                }
+
+                return $result;
+            },
+        );
+    }
+
+    /**
+     * List the room directory for verifying group members.
+     *
+     * @return array<string, \App\Feed\OutputModel\Calendar\Resource> keyed by room email address
+     *
+     * @throws MsGraphException
+     */
+    private function getDirectoryRooms(FeedSource $feedSource): array
+    {
+        $secrets = new SecretsDTO($feedSource);
+
+        $path = '/places/microsoft.graph.room';
+
+        $cacheKey = self::CACHE_KEY_ROOMS_PREFIX.$secrets->getCredentialsHash().'-all';
 
         /** @var array<string, \App\Feed\OutputModel\Calendar\Resource> $rooms */
         $rooms = $this->msGraphCache->get(
             $cacheKey,
-            function (ItemInterface $item) use ($feedSource, $path, $roomListEmail): array {
+            function (ItemInterface $item) use ($feedSource, $path): array {
                 $item->expiresAfter(self::PLACES_CACHE_TTL_SECONDS);
 
                 $rooms = [];
@@ -134,10 +132,10 @@ class ApiClient
 
                     $displayName = $entry['displayName'] ?? null;
 
-                    $rooms[$email] = new Resource(
+                    $rooms[strtolower($email)] = new Resource(
                         $email,
                         $email,
-                        $roomListEmail ?? '',
+                        '',
                         is_string($displayName) && '' !== $displayName ? $displayName : $email,
                     );
                 }

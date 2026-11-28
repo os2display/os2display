@@ -1209,20 +1209,19 @@
     "tenant-id": "Directory (tenant) ID",
     "errors": {
       "authentication": "Microsoft Entra ID afviste anmodningen om et adgangstoken (HTTP 400/401). Bed systemadministratoren kontrollere Tenant ID, Client ID og Client Secret, herunder om hemmeligheden er udløbet. Brug hemmelighedens værdi, ikke dens ID. Den præcise OAuth-fejlkode findes i serverloggen.",
-      "bad-request": "Microsoft Graph afviste forespørgslen om lokaler eller lokalelister som ugyldig (HTTP 400). Det betyder ikke nødvendigvis, at legitimationsoplysningerne er forkerte. Bed systemadministratoren undersøge forespørgslen og fejlen i serverloggen.",
-      "invalid-token": "Microsoft Graph afviste adgangstokenet (HTTP 401). Tokenet kan mangle de nødvendige application-rettigheder. Bed systemadministratoren kontrollere, at den app-registrering og tenant, datakilden bruger, har Microsoft Graph-rettigheden Place.Read.All til lokaler og lokalelister samt Calendars.Read til kalenderdata. Rettighederne skal være af typen Application, ikke Delegated, og have administratorsamtykke. Forny derefter det cachede token. Hvis fejlen fortsætter, kontrollér tokenets gyldighed og serverloggen.",
-      "access-denied": "Microsoft Graph nægtede adgang til lokaler eller lokalelister (HTTP 403). Bed systemadministratoren kontrollere application-rettigheden Place.Read.All og administratorsamtykke. Efter ændring af rettigheder kan det være nødvendigt at forny det cachede adgangstoken, som normalt genbruges i cirka 55 minutter.",
+      "bad-request": "Microsoft Graph afviste forespørgslen om gruppemedlemmer eller lokaler som ugyldig (HTTP 400). Kontrollér gruppens objekt-ID og serverloggen.",
+      "invalid-token": "Microsoft Graph afviste adgangstokenet (HTTP 401). Bed systemadministratoren kontrollere application-rettigheder til gruppemedlemmer, User.ReadBasic.All til medlemmers mail og navn, Place.Read.All til lokaler samt Calendars.Read til kalenderdata. Kontrollér administratorsamtykke og forny det cachede token.",
+      "access-denied": "Microsoft Graph nægtede adgang til gruppemedlemmer eller lokaler (HTTP 403). Bed systemadministratoren kontrollere application-rettigheder til gruppemedlemmer, User.ReadBasic.All og Place.Read.All samt administratorsamtykke. Forny det cachede token efter ændring af rettigheder.",
       "throttled": "Microsoft Graph modtager for mange forespørgsler (HTTP 429). Vent lidt, og prøv igen. Hvis problemet fortsætter, bed systemadministratoren undersøge belastningen og serverloggen.",
       "connection": "Forbindelsen til Microsoft kunne ikke gennemføres. Bed systemadministratoren kontrollere de gemte indstillinger, netværksforbindelsen og serverloggen. Oplys tidspunktet for fejlen."
     },
     "client-id": "Application (client) ID",
     "client-id-help": "Kaldes også App ID. Det er den samme værdi.",
     "client-secret": "Client Secret",
-    "values-info": "Værdierne findes på app-registreringen i Azure-portalen under \"Overview\" (Directory (tenant) ID og Application (client) ID) og \"Certificates & secrets\" (Client Secret — brug selve værdien, ikke Secret ID). App-registreringen skal have application-rettighederne Place.Read.All og Calendars.Read med administratorsamtykke.",
-    "locations": "Lokationer (lokalelister)",
-    "locations-help": "Vælg de lokalelister, som lokalerne skal hentes fra. Hvis listen er tom, skyldes det, at der ikke er oprettet lokalelister i jeres Microsoft 365. I så fald er alle tenantens lokaler tilgængelige.",
-    "redacted-value-input-placeholder": "Skjult værdi",
-    "save-before-locations-can-be-set": "Bemærk! Datakilden skal gemmes før der kan tilkobles lokationer. Gem og åbn datakilden igen."
+    "values-info": "App-oplysningerne findes i Entra ID under App registrations. Brug Client Secrets værdi, ikke Secret ID. Gruppens objekt-ID findes på gruppens oversigt. Appen skal have adgang til gruppemedlemmer, medlemmers mail og navn, lokaler og kalenderdata.",
+    "group-id": "M365 Group object ID",
+    "group-id-help": "Indtast gruppens objekt-ID som en GUID. Kun lokaler, der er direkte medlemmer af gruppen, kan vælges på slides.",
+    "redacted-value-input-placeholder": "Skjult værdi"
   },
   "poster-selector-v2": {
     "preview-of-events": "Begivenheder der vil vises nu:",

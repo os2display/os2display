@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- MS Graph feed sources now require an M365 group object ID instead of room-list selection.
+  Slide room choices and booking authorization use the group's direct room members.
+
 - Added Straksbooking for MS Graph calendar feeds using the feed source's app credentials, scoped
   calendar write access, live availability checks and room-specific cache invalidation. Existing
   Calendar API booking setups retain their existing authentication and behavior.

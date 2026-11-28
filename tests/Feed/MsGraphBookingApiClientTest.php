@@ -20,6 +20,7 @@ class MsGraphBookingApiClientTest extends TestCase
             'tenant_id' => 'example.onmicrosoft.com',
             'client_id' => '11111111-2222-3333-4444-555555555555',
             'client_secret' => 'test-secret',
+            'group_id' => '5391f5f7-111d-4452-a1b8-393b85399721',
         ]);
     }
 

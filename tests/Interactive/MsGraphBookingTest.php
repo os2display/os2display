@@ -54,6 +54,7 @@ class MsGraphBookingTest extends TestCase
             'tenant_id' => 'example.onmicrosoft.com',
             'client_id' => '11111111-2222-3333-4444-555555555555',
             'client_secret' => 'test-secret',
+            'group_id' => '5391f5f7-111d-4452-a1b8-393b85399721',
         ]);
         $feed = new Feed();
         $feed->setId(new Ulid());
@@ -249,11 +250,10 @@ class MsGraphBookingTest extends TestCase
         }
     }
 
-    public function testRoomOutsideSelectedRoomListsIsRejected(): void
+    public function testRoomOutsideConfiguredGroupIsRejected(): void
     {
-        $this->source->setSecrets(array_merge($this->source->getSecrets(), ['locations' => ['building@example.com']]));
         $client = $this->createMock(ApiClient::class);
-        $client->expects($this->once())->method('getRooms')->with($this->source, 'building@example.com')->willReturn([]);
+        $client->expects($this->once())->method('getRooms')->with($this->source)->willReturn([]);
         $client->expects($this->never())->method('getBusyIntervals');
         $booking = new MsGraphBooking($client, $this->createMock(EntityManagerInterface::class), $this->createMock(FeedSourceRepository::class), new ArrayAdapter(), new ArrayAdapter(), new NullLogger());
         $this->expectException(NotAcceptableException::class);
